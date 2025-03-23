@@ -4,8 +4,8 @@ interface CreateUserFormProps {
   setUserWasCreated: Dispatch<SetStateAction<boolean>>;
 }
 
-const validatePassword = (password: string): string[] => {
-  const errors: string[] = [];
+const validatePassword = (password: string) => {
+  const errors = [];
   if (password.length < 10) errors.push("Password must be at least 10 characters long");
   if (password.length > 24) errors.push("Password must be at most 24 characters long");
   if (!/\d/.test(password)) errors.push("Password must contain at least one number");
@@ -18,23 +18,40 @@ const validatePassword = (password: string): string[] => {
 function CreateUserForm({ setUserWasCreated }: CreateUserFormProps) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [clientErrors, setClientErrors] = useState<string[]>([]);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [errors, setErrors] = useState<{ username?: string; password?: string[] }>({});
   const [success, setSuccess] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
+
+  const handleUsernameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setUsername(e.target.value);
+    setErrors((prevErrors) => ({
+      ...prevErrors,
+      username: e.target.value.trim() ? "" : "Enter your username.",
+    }));
+  };
+
+  const handlePasswordChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setPassword(value);
+    setErrors((prevErrors) => ({
+      ...prevErrors,
+      password: validatePassword(value),
+    }));
+  };
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    // Validate password
-    const errors = validatePassword(password);
-    if (errors.length > 0) {
-      setClientErrors(errors);
+    const newErrors: { username?: string; password?: string[] } = {};
+
+    if (!username.trim()) newErrors.username = "Enter your username.";
+    const passwordErrors = validatePassword(password);
+    if (passwordErrors.length > 0) newErrors.password = passwordErrors;
+
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
       return;
     }
-
-    // Reset error messages
-    setClientErrors([]);
-    setErrorMessage(null);
 
     try {
       const response = await fetch(
@@ -43,73 +60,90 @@ function CreateUserForm({ setUserWasCreated }: CreateUserFormProps) {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "Authorization": `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhdWQiOlsidmlrcmFudGNoYXZhbjIwMEBnbWFpbC5jb20iXSwiaXNzIjoiaGVubmdlLWFkbWlzc2lvbi1jaGFsbGVuZ2UiLCJzdWIiOiJjaGFsbGVuZ2UifQ.bnzvAuW1aLOrjDyu1WcHIGV4WNS2I8lGzh05bxkp3Xo`
+            "Authorization": `Bearer ayJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhdWQiOlsidmlrcmFudGNoYXZhbjIwMEBnbWFpbC5jb20iXSwiaXNzIjoiaGVubmdlLWFkbWlzc2lvbi1jaGFsbGVuZ2UiLCJzdWIiOiJjaGFsbGVuZ2UifQ.bnzvAuW1aLOrjDyu1WcHIGV4WNS2I8lGzh05bxkp3Xo`,
           },
           body: JSON.stringify({ username, password }),
         }
       );
 
-      if (response.ok) {
-        setSuccess(true);
-        setUserWasCreated(true);
-      } else {
-        const data = await response.json();
-        if (data.error === "password_not_allowed") {
-          setErrorMessage("Sorry, the entered password is not allowed, please try a different one.");
-        } else if (response.status === 401 || response.status === 403) {
-          setErrorMessage("Not authenticated to access this resource.");
-        } else {
-          setErrorMessage("Something went wrong, please try again.");
+      if (!response.ok) {
+          // Try to extract JSON response if available
+          let errorResponse;
+          try {
+            errorResponse = await response.json();
+          } catch {
+            errorResponse = await response.text(); // If response isn't JSON, get raw text
+          }
+    
+          switch (response.status) {
+            case 400:
+              setErrorMessage("Invalid request format. Please check your input.");
+              break;
+            case 401:
+              setErrorMessage("Invalid authentication token. Please provide a valid token.");
+              break;
+            case 403:
+              setErrorMessage("You do not have access to this resource.");
+              break;
+            case 422:
+              setErrorMessage(`Validation error: ${errorResponse.errors?.join(", ") || "Unknown error"}`);
+              break;
+            case 500:
+              setErrorMessage("Internal server error. Please try again later.");
+              break;
+            default:
+              setErrorMessage("Something went wrong. Please try again.");
+          }
+    
+          console.error("Error Response:", errorResponse);
+          return;
         }
+    
+        // Success
+        const data = await response.json();
+        if (data.success) {
+          setSuccess(true);
+          setErrorMessage(""); // Clear previous errors if any
+        }
+      } catch (error) {
+        console.error("Network Error:", error);
+        setErrorMessage("Network error: Unable to reach the server. Please check your connection.");
       }
-    } catch (error) {
-      setErrorMessage("Something went wrong, please try again.");
-    }
-  };
+    };
 
   return (
     <div style={formWrapper}>
-      <form style={form} onSubmit={handleSubmit}>
-        {/* Username */}
+      <form onSubmit={handleSubmit} style={form}>
         <label style={formLabel}>Username</label>
         <input
-          id="username"
           type="text"
           value={username}
-          onChange={(e) => setUsername(e.target.value)}
+          onChange={handleUsernameChange}
+          aria-invalid={!!errors.username}
           style={formInput}
-          required
         />
+        {errors.username && <p>{errors.username}</p>}
 
-        {/* Password */}
         <label style={formLabel}>Password</label>
         <input
-          id="password"
           type="password"
           value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          aria-invalid={clientErrors.length > 0 ? "true" : "false"}
+          onChange={handlePasswordChange}
+          aria-invalid={errors.password && errors.password.length > 0}
           style={formInput}
-          required
         />
-
-        {/* Password Validation Errors */}
-        {clientErrors.length > 0 && (
-          <ul style={{ color: "red" }}>
-            {clientErrors.map((error, index) => (
+        {errors.password && errors.password.length > 0 && (
+          <ul>
+            {errors.password.map((error, index) => (
               <li key={index}>{error}</li>
             ))}
           </ul>
         )}
 
-        {/* API Error Messages */}
-        {errorMessage && <p style={{ color: "red" }}>{errorMessage}</p>}
+        <button type="submit" style={formButton}>Create User</button>
 
-        {/* Success Message */}
+        {errorMessage && <p>{errorMessage}</p>}
         {success && <p style={{ color: "green" }}>User successfully created!</p>}
-
-        {/* Submit Button */}
-        <button style={formButton} disabled={!username || clientErrors.length > 0}>Create User</button>
       </form>
     </div>
   );
@@ -117,48 +151,8 @@ function CreateUserForm({ setUserWasCreated }: CreateUserFormProps) {
 
 export { CreateUserForm };
 
-const formWrapper: CSSProperties = {
-  maxWidth: '500px',
-  width: '80%',
-  backgroundColor: '#efeef5',
-  padding: '24px',
-  borderRadius: '8px',
-};
-
-const form: CSSProperties = {
-  display: 'flex',
-  flexDirection: 'column',
-  gap: '8px',
-};
-
-const formLabel: CSSProperties = {
-  fontWeight: 700,
-};
-
-const formInput: CSSProperties = {
-  outline: 'none',
-  padding: '8px 16px',
-  height: '40px',
-  fontSize: '14px',
-  backgroundColor: '#f8f7fa',
-  border: '1px solid rgba(0, 0, 0, 0.12)',
-  borderRadius: '4px',
-};
-
-const formButton: CSSProperties = {
-  outline: 'none',
-  borderRadius: '4px',
-  border: '1px solid rgba(0, 0, 0, 0.12)',
-  backgroundColor: '#7135d2',
-  color: 'white',
-  fontSize: '16px',
-  fontWeight: 500,
-  height: '40px',
-  padding: '0 8px',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  marginTop: '8px',
-  alignSelf: 'flex-end',
-  cursor: 'pointer',
-};
+const formWrapper: CSSProperties = { maxWidth: '500px', width: '80%', backgroundColor: '#efeef5', padding: '24px', borderRadius: '8px' };
+const form: CSSProperties = { display: 'flex', flexDirection: 'column', gap: '8px' };
+const formLabel: CSSProperties = { fontWeight: 700 };
+const formInput: CSSProperties = { outline: 'none', padding: '8px 16px', height: '40px', fontSize: '14px', backgroundColor: '#f8f7fa', border: '1px solid rgba(0, 0, 0, 0.12)', borderRadius: '4px' };
+const formButton: CSSProperties = { outline: 'none', borderRadius: '4px', border: '1px solid rgba(0, 0, 0, 0.12)', backgroundColor: '#7135d2', color: 'white', fontSize: '16px', fontWeight: 500, height: '40px', padding: '0 8px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: '8px', alignSelf: 'flex-end', cursor: 'pointer' };

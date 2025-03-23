@@ -15,12 +15,14 @@ const validatePassword = (password: string) => {
   return errors;
 };
 
-function CreateUserForm({ setUserWasCreated }: CreateUserFormProps) {
+     
+function CreateUserForm({ }: CreateUserFormProps) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [errors, setErrors] = useState<{ username?: string; password?: string[] }>({});
   const [success, setSuccess] = useState(false);
-  const [errorMessage, setErrorMessage] = useState("");
+  const [_setErrorMessage] = useState<string | null>(null);
+
 
   const handleUsernameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setUsername(e.target.value);
@@ -60,54 +62,31 @@ function CreateUserForm({ setUserWasCreated }: CreateUserFormProps) {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "Authorization": `Bearer ayJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhdWQiOlsidmlrcmFudGNoYXZhbjIwMEBnbWFpbC5jb20iXSwiaXNzIjoiaGVubmdlLWFkbWlzc2lvbi1jaGFsbGVuZ2UiLCJzdWIiOiJjaGFsbGVuZ2UifQ.bnzvAuW1aLOrjDyu1WcHIGV4WNS2I8lGzh05bxkp3Xo`,
+            "Authorization": `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhdWQiOlsidmlrcmFudGNoYXZhbjIwMEBnbWFpbC5jb20iXSwiaXNzIjoiaGVubmdlLWFkbWlzc2lvbi1jaGFsbGVuZ2UiLCJzdWIiOiJjaGFsbGVuZ2UifQ.bnzvAuW1aLOrjDyu1WcHIGV4WNS2I8lGzh05bxkp3Xo`,
           },
           body: JSON.stringify({ username, password }),
         }
       );
 
       if (!response.ok) {
-          // Try to extract JSON response if available
-          let errorResponse;
-          try {
-            errorResponse = await response.json();
-          } catch {
-            errorResponse = await response.text(); // If response isn't JSON, get raw text
-          }
+          if (response.status === 401 || response.status === 403) 
+            return setErrors({ username: "Not authenticated to access this resource." });
     
-          switch (response.status) {
-            case 400:
-              setErrorMessage("Invalid request format. Please check your input.");
-              break;
-            case 401:
-              setErrorMessage("Invalid authentication token. Please provide a valid token.");
-              break;
-            case 403:
-              setErrorMessage("You do not have access to this resource.");
-              break;
-            case 422:
-              setErrorMessage(`Validation error: ${errorResponse.errors?.join(", ") || "Unknown error"}`);
-              break;
-            case 500:
-              setErrorMessage("Internal server error. Please try again later.");
-              break;
-            default:
-              setErrorMessage("Something went wrong. Please try again.");
-          }
+          if (response.status >= 500) 
+            return setErrors({ username: "Something went wrong, please try again." });
     
-          console.error("Error Response:", errorResponse);
-          return;
+          const result = await response.json().catch(() => null);
+          return setErrors({
+            password: result?.errors?.map((err: string) => 
+              err === "not_allowed" ? "Sorry, the entered password is not allowed." : err
+            ) || ["An unknown error occurred."]
+          });
         }
     
-        // Success
-        const data = await response.json();
-        if (data.success) {
-          setSuccess(true);
-          setErrorMessage(""); // Clear previous errors if any
-        }
-      } catch (error) {
-        console.error("Network Error:", error);
-        setErrorMessage("Network error: Unable to reach the server. Please check your connection.");
+        setSuccess(true);
+        setErrors({});
+      } catch {
+        setErrors({ username: "Network error: Unable to reach the server." });
       }
     };
 
@@ -142,7 +121,7 @@ function CreateUserForm({ setUserWasCreated }: CreateUserFormProps) {
 
         <button type="submit" style={formButton}>Create User</button>
 
-        {errorMessage && <p>{errorMessage}</p>}
+        {_setErrorMessage ? <p>{_setErrorMessage}</p> : null}
         {success && <p style={{ color: "green" }}>User successfully created!</p>}
       </form>
     </div>
